@@ -1,73 +1,74 @@
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import threading
+import sqlite3
 
-def run_server():
-    server = HTTPServer(("0.0.0.0", 8000), BaseHTTPRequestHandler)
-    server.serve_forever()
+conn = sqlite3.connect("movies.db", check_same_thread=False)
+cur = conn.cursor()
 
-threading.Thread(target=run_server).start()
+# 🧱 TABLE CREATE
+cur.execute("""
+CREATE TABLE IF NOT EXISTS movies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    part INTEGER,
+    file_id TEXT
+)
+""")
 
-
-import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
-from db import add_movie, get_parts
-
-TOKEN = "8716119355:AAGKHNCEAbpaYbVQAYSJzt0oioDlsshtfSk"
+# ⚡ INDEX
+cur.execute("CREATE INDEX IF NOT EXISTS idx_name ON movies(name)")
+conn.commit()
 
 
 # 📥 SAVE MOVIE
-async def save(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
+def add_movie(name, part, file_id):
+    name = name.lower().replace(".mp4", "").strip()
 
-    file_id = None
-    file_name = "movie"
+    # remove extra spaces / normalize
+    if "_" in name:
+        name = name.split("_")[0]
 
-    if msg.video:
-        file_id = msg.video.file_id
-        file_name = msg.video.file_name or "movie"
-
-    elif msg.document:
-        file_id = msg.document.file_id
-        file_name = msg.document.file_name or "movie"
-
-    if not file_id:
-        return
-
-    file_name = file_name.lower().replace(".mp4","").strip()
-
-    if "_" in file_name:
-        name, part = file_name.rsplit("_",1)
-        part = int(part)
-    else:
-        name = file_name
-        part = 1
-
-    add_movie(name, part, file_id)
-
-    await msg.reply_text(f"✔ Saved: {name} Part {part}")
+    cur.execute(
+        "INSERT INTO movies (name, part, file_id) VALUES (?, ?, ?)",
+        (name, part, file_id)
+    )
+    conn.commit()
 
 
-# 🔍 SEARCH TEST
-async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    name = update.message.text.lower().strip()
+# 🔍 GET ALL PARTS
+def get_parts(name):
+    name = name.lower().replace(".mp4", "").strip()
+    name = name.split("_")[0]
 
-    parts = get_parts(name)
+    cur.execute(
+        "SELECT part FROM movies WHERE name LIKE ? ORDER BY part",
+        (name + "%",)
+    )
 
-    if not parts:
-        await update.message.reply_text("❌ Movie नाही सापडली")
-    else:
-        await update.message.reply_text(f"Parts: {parts}")
+    return [row[0] for row in cur.fetchall()]
 
 
-app = ApplicationBuilder().token(TOKEN).build()
+# 🎬 GET SPECIFIC PART
+def get_movie_by_part(name, part):
+    name = name.lower().replace(".mp4", "").strip()
+    name = name.split("_")[0]
 
-app.add_handler(MessageHandler(filters.VIDEO | filters.Document.ALL, save))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
+    cur.execute(
+        "SELECT file_id FROM movies WHERE name LIKE ? AND part=?",
+        (name + "%", part)
+    )
 
-print("Bot running 🚀")
-app.run_polling()
-if __name__ == "__main__":
-    app.run_polling()
+    result = cur.fetchone()
+    return result[0] if result else None
+
+
+# 🔎 SEARCH (optional)
+def search_movie(query):
+    query = f"%{query.lower()}%"
+
+    cur.execute("""
+    SELECT name, part, file_id
+    FROM movies
+    WHERE name LIKE ?
+    LIMIT 1
+    """, (query,))
+
+    return cur.fetchone()
