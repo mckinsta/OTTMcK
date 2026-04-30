@@ -1,3 +1,16 @@
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+
+def run_server():
+    server = HTTPServer(("0.0.0.0", 8000), BaseHTTPRequestHandler)
+    server.serve_forever()
+
+threading.Thread(target=run_server).start()
+
+
+import os
+from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 from db import add_movie, get_parts
