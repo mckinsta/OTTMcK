@@ -2,7 +2,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, ContextTypes, filters
 from db import add_movie, get_parts
 
-TOKEN = "YOUR_BOT_TOKEN"
+TOKEN = "8716119355:AAGKHNCEAbpaYbVQAYSJzt0oioDlsshtfSk"
 
 
 # 📥 SAVE MOVIE
