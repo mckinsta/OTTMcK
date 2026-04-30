@@ -56,3 +56,5 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search))
 
 print("Bot running 🚀")
 app.run_polling()
+if __name__ == "__main__":
+    app.run_polling()
