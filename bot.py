@@ -72,3 +72,6 @@ def search_movie(query):
     """, (query,))
 
     return cur.fetchone()
+if __name__ == "__main__":
+    print("Bot starting...")
+    app.run_polling()
