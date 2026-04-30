@@ -1,30 +1,53 @@
+import os
 import sqlite3
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
+# ================= TOKEN (Railway ENV) =================
+TOKEN = os.getenv("BOT_TOKEN")
+
+# ================= DATABASE =================
 conn = sqlite3.connect("movies.db", check_same_thread=False)
 cur = conn.cursor()
 
-# 🧱 TABLE CREATE
 cur.execute("""
 CREATE TABLE IF NOT EXISTS movies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
-    part INTEGER,
+    part INTEGER DEFAULT 1,
     file_id TEXT
 )
 """)
 
-# ⚡ INDEX
 cur.execute("CREATE INDEX IF NOT EXISTS idx_name ON movies(name)")
 conn.commit()
 
+# ================= START =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🎬 Movie Bot Ready!\n\n"
+        "📌 Forward video → auto save\n"
+        "📌 /get movie_name → send movie"
+    )
 
-# 📥 SAVE MOVIE
-def add_movie(name, part, file_id):
-    name = name.lower().replace(".mp4", "").strip()
+# ================= SAVE MOVIE =================
+async def save_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = update.message
 
-    # remove extra spaces / normalize
-    if "_" in name:
-        name = name.split("_")[0]
+    if not msg.video:
+        return
+
+    file_id = msg.video.file_id
+    caption = msg.caption or "unknown"
+
+    parts = caption.rsplit(" ", 1)
+
+    if len(parts) == 2 and parts[1].isdigit():
+        name = parts[0].lower()
+        part = int(parts[1])
+    else:
+        name = caption.lower()
+        part = 1
 
     cur.execute(
         "INSERT INTO movies (name, part, file_id) VALUES (?, ?, ?)",
@@ -32,46 +55,37 @@ def add_movie(name, part, file_id):
     )
     conn.commit()
 
+    await msg.reply_text(f"✅ Saved: {name} Part {part}")
 
-# 🔍 GET ALL PARTS
-def get_parts(name):
-    name = name.lower().replace(".mp4", "").strip()
-    name = name.split("_")[0]
+# ================= GET MOVIE =================
+async def get_movie(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ Usage: /get movie_name")
+        return
 
-    cur.execute(
-        "SELECT part FROM movies WHERE name LIKE ? ORDER BY part",
-        (name + "%",)
-    )
+    name = " ".join(context.args).lower()
 
-    return [row[0] for row in cur.fetchall()]
-
-
-# 🎬 GET SPECIFIC PART
-def get_movie_by_part(name, part):
-    name = name.lower().replace(".mp4", "").strip()
-    name = name.split("_")[0]
-
-    cur.execute(
-        "SELECT file_id FROM movies WHERE name LIKE ? AND part=?",
-        (name + "%", part)
-    )
-
+    cur.execute("SELECT file_id FROM movies WHERE name=?", (name,))
     result = cur.fetchone()
-    return result[0] if result else None
 
+    if result:
+        await update.message.reply_video(result[0])
+    else:
+        await update.message.reply_text("❌ Movie not found")
 
-# 🔎 SEARCH (optional)
-def search_movie(query):
-    query = f"%{query.lower()}%"
-
-    cur.execute("""
-    SELECT name, part, file_id
-    FROM movies
-    WHERE name LIKE ?
-    LIMIT 1
-    """, (query,))
-
-    return cur.fetchone()
+# ================= MAIN =================
 if __name__ == "__main__":
-    print("Bot starting...")
+    if not TOKEN:
+        print("❌ BOT_TOKEN missing in environment variables")
+        exit()
+
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("get", get_movie))
+
+    # forward video handler
+    app.add_handler(MessageHandler(filters.VIDEO, save_movie))
+
+    print("🚀 Bot starting...")
     app.run_polling()
